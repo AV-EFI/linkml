@@ -40,6 +40,8 @@ from linkml import METAMODEL_NAMESPACE_NAME
 from linkml._version import __version__
 from linkml.utils.generator import Generator, shared_arguments
 
+logger = logging.getLogger(__name__)
+
 OWL_TYPE = URIRef  ## RDFS.Literal or OWL.Thing
 
 SWRL = rdflib.Namespace("http://www.w3.org/2003/11/swrl#")
@@ -168,6 +170,9 @@ class OwlSchemaGenerator(Generator):
         default_factory=lambda: package_schemaview("linkml_runtime.linkml_model.meta")
     )
 
+    enum_iri_separator: str = "#"
+    """Separator for enum IRI. Can be overridden for example if your namespace IRI already contains a #"""
+
     def as_graph(self) -> Graph:
         """
         Generate an rdflib Graph from the LinkML schema.
@@ -270,7 +275,7 @@ class OwlSchemaGenerator(Generator):
                     # if isinstance(v, str):
                     #    obj = URIRef(msv.expand_curie(v))
                     # else:
-                    #    logging.debug(f"Skipping {uri} {metaslot_uri} => {v}")
+                    #    logger.debug(f"Skipping {uri} {metaslot_uri} => {v}")
                 else:
                     obj = Literal(v)
                 self.graph.add((uri, metaslot_uri, obj))
@@ -438,7 +443,7 @@ class OwlSchemaGenerator(Generator):
                 if slot:
                     own_slots.append(slot)
                 else:
-                    logging.warning(f"Unknown top-level slot {slot_name}")
+                    logger.warning(f"Unknown top-level slot {slot_name}")
         else:
             own_slots = []
         own_slots.extend(cls.slot_conditions.values())
@@ -695,7 +700,7 @@ class OwlSchemaGenerator(Generator):
         if element.equals_string is not None:
             equals_string = element.equals_string
             if is_literal is None:
-                logging.warning(f"ignoring equals_string={equals_string} as unable to tell if literal")
+                logger.warning(f"ignoring equals_string={equals_string} as unable to tell if literal")
             elif is_literal:
                 constraints[XSD.pattern] = equals_string
             else:
@@ -704,7 +709,7 @@ class OwlSchemaGenerator(Generator):
         if element.equals_string_in:
             equals_string_in = element.equals_string_in
             if is_literal is None:
-                logging.warning(f"ignoring equals_string={equals_string_in} as unable to tell if literal")
+                logger.warning(f"ignoring equals_string={equals_string_in} as unable to tell if literal")
             elif is_literal:
                 dt_exprs = [
                     self._datatype_restriction(XSD.string, [self._facet(XSD.pattern, s)]) for s in equals_string_in
@@ -770,7 +775,7 @@ class OwlSchemaGenerator(Generator):
                     if slot_uri == URIRef(att_uri):
                         n += 1
             if n > 1:
-                logging.warning(f"Ambiguous attribute: {slot.name} {slot_uri}")
+                logger.warning(f"Ambiguous attribute: {slot.name} {slot_uri}")
                 return
 
         self.add_metadata(slot, slot_uri)
@@ -906,7 +911,7 @@ class OwlSchemaGenerator(Generator):
             if pv_owl_type == RDFS.Literal:
                 pv_node = Literal(pv.text)
                 if pv.meaning:
-                    logging.warning(f"Meaning on literal {pv.text} in {e.name} is ignored")
+                    logger.warning(f"Meaning on literal {pv.text} in {e.name} is ignored")
             else:
                 pv_node = self._permissible_value_uri(pv, enum_uri, e)
             pv_uris.append(pv_node)
@@ -967,7 +972,7 @@ class OwlSchemaGenerator(Generator):
     def _add_rule(self, subject: Union[URIRef, BNode], rule: ClassRule, cls: ClassDefinition):
         if not self.use_swrl:
             return
-        logging.warning("SWRL support is experimental and incomplete")
+        logger.warning("SWRL support is experimental and incomplete")
         head = []
         body = []
         for pre in rule.preconditions:
@@ -1014,7 +1019,7 @@ class OwlSchemaGenerator(Generator):
                 owltypes.update(x_owltypes)
         owltypes.update(current)
         if len(owltypes) > 1:
-            logging.warning(f"Multiple owl types {owltypes}")
+            logger.warning(f"Multiple owl types {owltypes}")
             # if self.target_profile == OWLProfile.dl:
         return owltypes
 
@@ -1142,7 +1147,7 @@ class OwlSchemaGenerator(Generator):
     ) -> Optional[Union[BNode, URIRef]]:
         graph = self.graph
         if [x for x in exprs if x is None]:
-            logging.warning(f"Null expr in: {exprs} for {predicate} {node}")
+            logger.warning(f"Null expr in: {exprs} for {predicate} {node}")
             exprs = [x for x in exprs if x is not None]
         if len(exprs) == 0:
             return None
@@ -1252,7 +1257,7 @@ class OwlSchemaGenerator(Generator):
         if pv.meaning:
             return URIRef(self.schemaview.expand_curie(pv.meaning))
         else:
-            return URIRef(enum_uri + "#" + pv.text.replace(" ", "+"))
+            return URIRef(enum_uri + self.enum_iri_separator + pv.text.replace(" ", "+"))
 
     def slot_owl_type(self, slot: SlotDefinition) -> URIRef:
         sv = self.schemaview
@@ -1268,10 +1273,10 @@ class OwlSchemaGenerator(Generator):
             return OWL.ObjectProperty
         is_literal_vals = self.slot_is_literal_map[slot.name]
         if len(is_literal_vals) > 1:
-            logging.warning(f"Ambiguous type for: {slot.name}")
+            logger.warning(f"Ambiguous type for: {slot.name}")
         if range is None:
             if not is_literal_vals:
-                logging.warning(f"Guessing type for {slot.name}")
+                logger.warning(f"Guessing type for {slot.name}")
                 return OWL.ObjectProperty
             if (list(is_literal_vals))[0]:
                 return OWL.DatatypeProperty
@@ -1350,6 +1355,13 @@ class OwlSchemaGenerator(Generator):
     default=str(OWL.Class),
     show_default=True,
     help="Default OWL type for permissible values",
+)
+@click.option(
+    "--enum-iri-separator",
+    default="#",
+    is_flag=False,
+    show_default=True,
+    help="IRI separator for enums.",
 )
 @click.version_option(__version__, "-V", "--version")
 def cli(yamlfile, metadata_profile: str, **kwargs):

@@ -45,6 +45,9 @@ from linkml.generators.python.python_ifabsent_processor import PythonIfAbsentPro
 from linkml.utils import deprecation_warning
 from linkml.utils.generator import shared_arguments
 
+logger = logging.getLogger(__name__)
+
+
 if int(PYDANTIC_VERSION[0]) == 1:
     deprecation_warning("pydantic-v1")
 
@@ -189,7 +192,7 @@ class PydanticGenerator(OOCodeGenerator, LifecycleMixin):
     template_dir: Optional[Union[str, Path]] = None
     """
     Override templates for each PydanticTemplateModel.
-    
+
     Directory with templates that override the default :attr:`.PydanticTemplateModel.template`
     for each class. If a matching template is not found in the override directory,
     the default templates will be used.
@@ -218,7 +221,7 @@ class PydanticGenerator(OOCodeGenerator, LifecycleMixin):
         )
 
     """
-    imports: Optional[List[Import]] = None
+    imports: Optional[Union[List[Import], Imports]] = None
     """
     Additional imports to inject into generated module.
 
@@ -365,8 +368,8 @@ class PydanticGenerator(OOCodeGenerator, LifecycleMixin):
         try:
             return compile_python(pycode)
         except NameError as e:
-            logging.error(f"Code:\n{pycode}")
-            logging.error(f"Error compiling generated python code: {e}")
+            logger.error(f"Code:\n{pycode}")
+            logger.error(f"Error compiling generated python code: {e}")
             raise e
 
     def _get_classes(self, sv: SchemaView) -> Tuple[List[ClassDefinition], Optional[List[ClassDefinition]]]:
@@ -455,9 +458,9 @@ class PydanticGenerator(OOCodeGenerator, LifecycleMixin):
 
     def generate_slot(self, slot: SlotDefinition, cls: ClassDefinition) -> SlotResult:
         slot_args = {
-            k: slot._as_dict.get(k, None)
+            k: getattr(slot, k, None)
             for k in PydanticAttribute.model_fields.keys()
-            if slot._as_dict.get(k, None) is not None
+            if getattr(slot, k, None) is not None
         }
         slot_alias = slot.alias if slot.alias else slot.name
         slot_args["name"] = underscore(slot_alias)
@@ -673,7 +676,7 @@ class PydanticGenerator(OOCodeGenerator, LifecycleMixin):
         else:
             # TODO: default ranges in schemagen
             # pyrange = 'str'
-            # logging.error(f'range: {s.range} is unknown')
+            # logger.error(f'range: {s.range} is unknown')
             raise Exception(f"range: {slot_range}")
         return pyrange
 
@@ -938,8 +941,11 @@ class PydanticGenerator(OOCodeGenerator, LifecycleMixin):
         # imports
         imports = DEFAULT_IMPORTS
         if self.imports is not None:
-            for i in self.imports:
-                imports += i
+            if isinstance(self.imports, Imports):
+                imports += self.imports
+            else:
+                for i in self.imports:
+                    imports += i
         if self.split_mode == SplitMode.FULL:
             imports += self._get_imports()
 
@@ -1160,9 +1166,9 @@ def _ensure_inits(paths: List[Path]):
     help="""
 Optional jinja2 template directory to use for class generation.
 
-Pass a directory containing templates with the same name as any of the default 
-:class:`.PydanticTemplateModel` templates to override them. The given directory will be 
-searched for matching templates, and use the default templates as a fallback 
+Pass a directory containing templates with the same name as any of the default
+:class:`.PydanticTemplateModel` templates to override them. The given directory will be
+searched for matching templates, and use the default templates as a fallback
 if an override is not found
 
 Available templates to override:
