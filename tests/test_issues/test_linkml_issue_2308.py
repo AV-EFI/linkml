@@ -1,4 +1,3 @@
-
 from rdflib import Graph
 
 from linkml.generators import OwlSchemaGenerator
